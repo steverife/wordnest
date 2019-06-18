@@ -26,25 +26,40 @@ def parse_table(text):
         book_list.append(book_info)
     return book_list
 
-
 def parse_book_info(text):
     metadata = {}
     current_title = None
     book_id = None
-    print(text)
+    buffer_lines = []
     for line in text.splitlines():
         if listing_comment_pattern.match(line) or listing_header_line_pattern.match(line):
-            continue
+            return None
         title_line_match = listing_title_line_pattern.match(line)
         listing_metadata_match = listing_metadata_pattern.match(line)
         if title_line_match:
-            current_title = title_line_match.groups()[0].strip()
             book_id = title_line_match.groups()[1].strip()
-        elif listing_metadata_match:
-            [key, value] = listing_metadata_pattern.search(line).groups()[:2]
-            metadata[key.lower()] = value
-    if current_title and book_id:
-            book_data = ({'title':current_title, 'book_id':book_id})
+            buffer_lines.append(title_line_match.groups()[0].strip())
+        else:
+            buffer_lines.append(line)
+    combined_text = ' '.join(buffer_lines)
+    combined_text = arrange_book_text(combined_text)
+    arranged_lines = combined_text.splitlines()
+    if not arranged_lines:
+        return None
+    title = arranged_lines[0]
+    if len(arranged_lines) > 1:
+        for line in arranged_lines[1:]:
+            listing_metadata_match = listing_metadata_pattern.match(line)
+            if listing_metadata_match:
+                [key, value] = listing_metadata_match.groups()[:2]
+                metadata[key.strip().lower()] = value.strip()
+    if title and book_id:
+            title = title.strip()
+            book_data = ({'info_text': combined_text, 'title_line': title, 'book_id':book_id.strip()})
+            title_parts =  title.split(', by')
+            book_data['title'] = title_parts[0]
+            if len(title_parts) > 1:
+                book_data['author'] = title_parts[1].strip()
             book_data.update(metadata)
             return book_data
     else:
@@ -60,12 +75,20 @@ def gutenberg_divide_index_into_tables(text):
     return book_list
 
 def gutenberg_text_to_json(text):
-    print (gutenberg_divide_index_into_tables(text))
+    return gutenberg_divide_index_into_tables(text)
+
+def arrange_book_text(text):
+    text = removed_duplicate_spaces(text)
+    text = text.replace('[','\n[')
+    return text
+
+def removed_duplicate_spaces(text):
+    return text.replace("  ", " ")
 
 def normalize_text(text):
     return text.replace("\r\n", "\n")
 
 if __name__ == '__main__':
-    text = get_file_text('http://gutenberg.readingroo.ms/GUTINDEX.2019')
+    text = get_file_text('http://gutenberg.readingroo.ms/GUTINDEX.2018')
     text = normalize_text(text)
-    gutenberg_text_to_json(text)
+    print(gutenberg_text_to_json(text))
