@@ -1,8 +1,23 @@
+"""
+script for downloading and parsing gutenberg.org catalog of book files
+turns flat text files into json
+
+list of books
+  each book is a dictionary with metadata book_id and title
+  as well as optionals such as subtitle, language
+"""
 import re
+import json
 from time import strptime
 from collections import namedtuple
 
 from requests import get
+
+class UnexpectedParsingResult(Exception):
+    """
+    for when our regex patterns fail on the text docs
+    """
+    pass
 
 class Patterns:
     listing_start = "<==LISTINGS==>"
@@ -16,15 +31,13 @@ class Patterns:
 RE_PATTERNS = Patterns()
 YearMonth = namedtuple('year_month', ['year', 'month'])
 
-
-"""
-  given text of this pattern:
-    eBooks:  1 Jun 2019 to 30 Jun 2019 ~ ~ ~ ~
-  return a YearMonth named tuple
-  return None if not found 
-
-"""
 def extract_year_month(text):
+    """
+      given text of this pattern:
+        eBooks:  1 Jun 2019 to 30 Jun 2019 ~ ~ ~ ~
+      return a YearMonth named tuple
+      return None if not found
+    """
     match = RE_PATTERNS.listing_date.search(text)
     if match:
         try:
@@ -39,10 +52,17 @@ def extract_year_month(text):
     return None
 
 def get_file_text(link):
+    """
+    download text file
+    """
     response = get(link)
     return response.content.decode('utf-8')
 
 def parse_table(text):
+    """
+    given text of month table of book listings
+    return list of books
+    """
     book_list = []
     current_date = None
     current_date = extract_year_month(text)
@@ -55,6 +75,10 @@ def parse_table(text):
     return book_list
 
 def parse_book_info(text):
+    """
+    given text of book info return dictionary of book metadata
+    return None on failure
+    """
     metadata = {}
     book_id = None
     buffer_lines = []
@@ -92,38 +116,52 @@ def parse_book_info(text):
     return None
 
 def gutenberg_divide_index_into_tables(text):
+    """
+    parse text of full doc and for each month table create a book list
+    combine all book lists as one list and return
+    """
     halves = re.split(RE_PATTERNS.listing_start, text)
     book_list = []
     if len(halves) != 2:
-        raise Exception('not', 'divided')
+        raise UnexpectedParsingResult
     for table_text in re.split(RE_PATTERNS.listing_date_divider, halves[1]):
         book_list += parse_table(table_text)
     return book_list
 
 def gutenberg_text_to_json(text):
-    return gutenberg_divide_index_into_tables(text)
+    """
+    take text document and return json representation
+    list of books, each book is a dictionary of book metadata
+
+    """
+    return json.dumps(gutenberg_divide_index_into_tables(text))
 
 def arrange_book_text(text):
+    """
+    clean up book info text so that metadata are on separate lines
+    """
     text = remove_extra_whitespace(text)
     text = text.replace('[', '\n[')
     return text
 
-"""
- remove multiple whitespaces in a row
- remove leading and trailing whitespace
-"""
 def remove_extra_whitespace(text):
+    """
+    remove multiple whitespaces in a row
+    remove leading and trailing whitespace
+    """
     return re.sub(r'(\s){2,}', ' ', text).strip()
 
-"""
- normalize the full text of document
-  - normalize line ends
-
-"""
 def normalize_text(text):
+    """
+    normalize the full text of document
+    normalize line ends
+    """
     return text.replace("\r\n", "\n")
 
 def main():
+    """
+    example of how to run on one text doc and return json representation
+    """
     retrieved_text = get_file_text('http://gutenberg.readingroo.ms/GUTINDEX.2018')
     normalized_text = normalize_text(retrieved_text)
     print(gutenberg_text_to_json(normalized_text))
