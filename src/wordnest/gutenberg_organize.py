@@ -1,14 +1,35 @@
 from requests import get  
 import re
+from time import strptime
+
+from collections import namedtuple
+
+year_month = namedtuple('year_month', ['year', 'month'])
 
 listing_start_pattern = "<==LISTINGS==>"
 listing_comment_pattern = re.compile("[\s]?[\*]{4}[\s\S]+[\*]{4}[\s]?")
-listing_date_pattern = re.compile("([\s\S]+)~ ~ ~ ~")
+listing_date_pattern = re.compile("to (?P<date>[0-9]{1,2}) (?P<month>[A-Z]{1}[a-z]{2,3}) (?P<year>[0-9]{4})")
+
 listing_date_divider_pattern = "~ ~ ~ ~ Posting Dates for the below eBooks:  "
 
 listing_title_line_pattern = re.compile("([\w]+[\s\S]+)[\s]+([0-9]+)")
 listing_header_line_pattern = re.compile("TITLE and AUTHOR[\s\S]+EBOOK NO\.")
 listing_metadata_pattern = re.compile(" \[((?:).*)\: ((?:).*)\]")
+
+def extract_year_month(text):
+    match = listing_date_pattern.search(text)
+    if match:
+        try:
+            month_text = match.groupdict().get('month')
+            if len(month_text) == 3:
+                month_number = strptime(match.groupdict().get('month'),'%b').tm_mon
+            else:
+                month_number = strptime(match.groupdict().get('month'),'%B').tm_mon
+        except:
+            month_number = None
+        return year_month(year=int(match.groupdict().get('year')), month = month_number)
+    else:
+        return None
 
 def get_file_text(link):
     response = get(link)
@@ -17,12 +38,12 @@ def get_file_text(link):
 def parse_table(text):
     book_list = []
     current_date = None
-    date_match = listing_date_pattern.match(text)
-    if date_match:
-        current_date = date_match.groups()[0]
-    print(current_date)
+    current_date = extract_year_month(text)
     for book_text in text.split('\n\n'):
         book_info = parse_book_info(book_text)
+        if not book_info:
+            continue
+        book_info['year_month'] = current_date
         book_list.append(book_info)
     return book_list
 
@@ -78,12 +99,12 @@ def gutenberg_text_to_json(text):
     return gutenberg_divide_index_into_tables(text)
 
 def arrange_book_text(text):
-    text = removed_duplicate_spaces(text)
+    text = remove_duplicate_spaces(text)
     text = text.replace('[','\n[')
     return text
 
-def removed_duplicate_spaces(text):
-    return text.replace("  ", " ")
+def remove_duplicate_spaces(text):
+    return re.sub('(\s){2,}', ' ', text).strip()
 
 def normalize_text(text):
     return text.replace("\r\n", "\n")
